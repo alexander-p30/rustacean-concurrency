@@ -124,14 +124,14 @@ fn new_bathroom(g: Gender) -> Bathroom {
 struct Event {
     name: String,
     producer_id: Uuid,
-    destination_id: Uuid,
+    destination_id: Option<Uuid>,
     person_data: Option<Person>,
 }
 
 fn new_event(
     name: String,
     producer_id: Uuid,
-    destination_id: Uuid,
+    destination_id: Option<Uuid>,
     person: Option<Person>,
 ) -> Event {
     return Event {
@@ -159,36 +159,38 @@ fn new_router() -> Router {
     };
 }
 
-impl Router {
-    fn register(&mut self, id: Uuid, tx: Sender<Event>) {
-        self.outbox.insert(id, tx);
-    }
-}
-
-fn spawn_person_thread(r: &mut Router) -> JoinHandle<()> {
+fn spawn_person_thread(router_tx: Sender<Event>) -> (JoinHandle<()>, Uuid, Sender<Event>) {
     let (tx_person, rx_person): (Sender<Event>, Receiver<Event>) = mpsc::channel();
     let mut person = new_person(Gender::Male);
-    r.register(person.id, mpsc::Sender::clone(&tx_person));
+    router_tx.send(new_event(
+        "person_created".to_string(),
+        person.id,
+        None,
+        Some(person.clone()),
+    ));
 
-    let person_t = thread::spawn(move || {
-        loop {
-            match &rx_person.try_recv() {
-                Ok(ev) => {
-                    println!("person received message: {:?}", ev);
-                    match ev.name.as_str() {
-                        "person_joined_the_queue" => person.joined_queue_at = ev.person_data.as_ref().unwrap().joined_queue_at,
-                        "person_entered_the_bathroom" => person.entered_bathroom_at = ev.person_data.as_ref().unwrap().entered_bathroom_at,
-                        "person_left_the_bathroom" => break,
-                        &_ => todo!(),
+    let person_t = thread::spawn(move || loop {
+        match &rx_person.try_recv() {
+            Ok(ev) => {
+                println!("person received message: {:?}", ev);
+                match ev.name.as_str() {
+                    "person_joined_the_queue" => {
+                        person.joined_queue_at = ev.person_data.as_ref().unwrap().joined_queue_at
                     }
+                    "person_entered_the_bathroom" => {
+                        person.entered_bathroom_at =
+                            ev.person_data.as_ref().unwrap().entered_bathroom_at
+                    }
+                    "person_left_the_bathroom" => break,
+                    &_ => todo!(),
                 }
-                Err(_) => (),
-            };
-            thread::sleep(RX_POLLING_WAIT);
-        }
+            }
+            Err(_) => (),
+        };
+        thread::sleep(RX_POLLING_WAIT);
     });
 
-    return person_t;
+    return (person_t, person.id, tx_person);
 }
 
 fn main() {
@@ -197,34 +199,32 @@ fn main() {
     // comunica threads de person com Bathroom
     // Bathroom <-Router-> Person
     // Coletor de métricas
-    let (tx_person, rx_person): (Sender<Event>, Receiver<Event>) = mpsc::channel();
-    let mut r = new_router();
-    let p = new_person(Gender::Male);
-    r.register(p.id, tx_person);
-    let person_router = mpsc::Sender::clone(&r.tx);
+    let r = Arc::new(Mutex::new(new_router()));
+    let r_thread = Arc::clone(&r);
 
     let router_t = thread::spawn(move || loop {
-        match r.rx.try_recv() {
+        let lock = r_thread.lock().unwrap();
+        let inbox = lock.rx.try_recv();
+        let outbox = lock.outbox.clone();
+        let listeners = lock.listeners.clone();
+        drop(lock);
+        match inbox {
             Ok(ev) => {
-                let rx = r.outbox.get(&ev.destination_id).unwrap();
-                rx.send(ev).unwrap();
+                if ev.destination_id.is_some() {
+                    let rx = outbox.get(&ev.destination_id.unwrap()).unwrap();
+                    rx.send(ev).unwrap();
+                }
+
+                match listeners.get(ev.name) {
+                    Some(interested_parties) => interested_parties.iter().for_each(|tx| tx.send(ev)),
+                    None => Ok(()),
+                }
+
                 0
             }
             Err(_) => 1,
         };
         thread::sleep(RX_POLLING_WAIT);
-    });
-
-    let person_t = thread::spawn(move || loop {
-        loop {
-            match &rx_person.try_recv() {
-                Ok(ev) => {
-                    println!("person received message: {:?}", ev);
-                }
-                Err(_) => (),
-            };
-            thread::sleep(RX_POLLING_WAIT);
-        }
     });
 
     let mut b = new_bathroom(Gender::Male);
@@ -241,8 +241,8 @@ fn main() {
         thread::sleep(RX_POLLING_WAIT);
     });
 
-    let e = new_event("hi".to_string(), p.id, p.id, Some(p.clone()));
-    person_router.send(e).unwrap();
-    router_t.join().unwrap();
-    person_t.join().unwrap();
+    let (person_t, person_id, person_tx) = spawn_person_thread();
+    let mut lock = r.lock().unwrap();
+    lock.outbox
+        .insert(person_id, mpsc::Sender::clone(&person_tx));
 }
