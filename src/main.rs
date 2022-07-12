@@ -1,3 +1,4 @@
+use core::fmt;
 use rand::distributions::Standard;
 use rand::prelude::*;
 use std::collections::HashMap;
@@ -12,23 +13,26 @@ const MAX_USE_TIME_THRESHOLD: Duration = Duration::new(5, 0);
 const TIME_SCALE: f64 = 7.0;
 const RX_POLLING_WAIT: Duration = Duration::new(0, 500000000);
 const PERSON_GENERATION_INTERVAL: Duration = Duration::new(3, 0);
-const ENABLE_LOGGING: bool = true;
+const ENABLE_LOGGING: bool = false;
+const MIN_PERSON_BATHROOM_TIME: u64 = 60;
+const MAX_PERSON_BATHROOM_TIME: u64 = MIN_PERSON_BATHROOM_TIME * 10;
 
 // Person events
 const EV_NEW_PERSON: &str = "new_person";
 const EV_PERSON_JOINED_THE_QUEUE: &str = "person_joined_the_queue";
 const EV_PERSON_ENTERED_THE_BATHROOM: &str = "person_entered_the_bathroom";
+const EV_PERSON_FINISHED_USING_BATHROOM: &str = "person_finished_using_bathroom";
 const EV_PERSON_LEFT_THE_BATHROOM: &str = "person_left_the_bathroom";
 // Bathroom events
 const EV_NEW_BATHROOM: &str = "new_bathroom";
 
+fn timestamp() -> chrono::format::DelayedFormat<chrono::format::StrftimeItems<'static>> {
+    return chrono::offset::Local::now().format("%Y-%m-%d %H:%M:%S.%3f");
+}
+
 fn log(msg: String) {
     if ENABLE_LOGGING {
-        println!(
-            "[{}] {}",
-            chrono::offset::Local::now().format("%Y-%m-%d %H:%M:%S.%3f"),
-            msg
-        );
+        println!("[{}] {}", timestamp(), msg);
     }
 }
 fn wait(d: Duration) {
@@ -82,6 +86,37 @@ struct Bathroom {
     female_queue: Vec<Person>,
 }
 
+impl fmt::Display for Bathroom {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        // Customize so only `x` and `y` are denoted.
+        let cabins_str = self.cabins.iter().fold("[".to_string(), |acc, cabin| {
+            if cabin.is_some() {
+                acc + &" |o̲|".to_string()
+            } else {
+                acc + &" |/|".to_string()
+            }
+        }) + " ]";
+
+        let occupied_cabins_count = self.cabins.iter().filter(|cabin| cabin.is_some()).count();
+
+        let female_queue_str = self
+            .female_queue
+            .iter()
+            .fold("".to_string(), |acc, _| acc + &" o".to_string());
+
+        let male_queue_str = self
+            .male_queue
+            .iter()
+            .fold("".to_string(), |acc, _| acc + &" o".to_string());
+
+        write!(
+            f,
+            "Bathroom {{\n\t[{}/{}] cabins: \t\t{}\n\t[{}] female_queue: \t{}\n\t[{}] male_queue: \t{}\n}}",
+            occupied_cabins_count, self.cabins.len(), cabins_str, self.female_queue.len(), female_queue_str, self.male_queue.len(), male_queue_str
+        )
+    }
+}
+
 impl Bathroom {
     fn enqueue(&mut self, mut person_to_enqueue: Person) {
         person_to_enqueue.joined_queue_at = Some(Instant::now());
@@ -92,7 +127,18 @@ impl Bathroom {
         }
     }
 
-    fn allocate_cabin(&mut self, mut person: Person) -> bool {
+    fn allocate_cabin(&mut self, gender: Gender) -> Option<Person> {
+        let first_in_queue = match gender {
+            Gender::Male => self.male_queue.first(),
+            Gender::Female => self.female_queue.first(),
+        };
+
+        if first_in_queue.is_none() {
+            return None;
+        }
+
+        let mut person = first_in_queue.unwrap().to_owned();
+
         if person.gender != self.allowed_gender
             || self.use_count == BATHROOM_SIZE.try_into().unwrap()
             || self
@@ -101,8 +147,7 @@ impl Bathroom {
                 .elapsed()
                 >= MAX_USE_TIME_THRESHOLD
         {
-            println!("dropped person {} of gender {:?}", person.id, person.gender);
-            return false;
+            return None;
         }
 
         let queue = match person.gender {
@@ -113,7 +158,6 @@ impl Bathroom {
         // Assures person is in queue, if not, we messed up
         queue.iter().find(|p| p.id == person.id).unwrap();
 
-        println!("use_count: {}", self.use_count);
         let first_free_cabin_idx = self
             .cabins
             .iter()
@@ -130,11 +174,23 @@ impl Bathroom {
                 person.entered_bathroom_at = Some(Instant::now());
 
                 queue.retain(|person_in_queue| person_in_queue.id != person.id);
-                self.cabins[idx] = Some(person);
-                true
+                self.cabins[idx] = Some(person.clone());
+                Some(person)
             }
-            None => false,
+            None => None,
         };
+    }
+
+    fn free_cabin(&mut self, person_id: Uuid) {
+        let cabin_idx = self
+            .cabins
+            .iter()
+            .position(|cabin| match cabin {
+                Some(person) => person.id == person_id,
+                None => false,
+            })
+            .unwrap();
+        self.cabins[cabin_idx] = None;
     }
 }
 
@@ -230,7 +286,11 @@ fn spawn_person_thread(
         ))
         .unwrap();
 
+    let person_id = person.id;
+
     let person_t = thread::spawn(move || loop {
+        let mut rand = rand::thread_rng();
+
         match &rx_person.try_recv() {
             Ok(msg) => match msg.name.as_str() {
                 EV_PERSON_JOINED_THE_QUEUE => {
@@ -238,7 +298,19 @@ fn spawn_person_thread(
                 }
                 EV_PERSON_ENTERED_THE_BATHROOM => {
                     person.entered_bathroom_at =
-                        msg.person_data.as_ref().unwrap().entered_bathroom_at
+                        msg.person_data.as_ref().unwrap().entered_bathroom_at;
+                    wait(Duration::new(
+                        rand.gen_range(MIN_PERSON_BATHROOM_TIME..MAX_PERSON_BATHROOM_TIME),
+                        0,
+                    ));
+                    let _ = router_tx
+                        .send(new_event(
+                            EV_PERSON_FINISHED_USING_BATHROOM.to_string(),
+                            person.id,
+                            None,
+                            Some(person.clone()),
+                        ))
+                        .unwrap();
                 }
                 EV_PERSON_LEFT_THE_BATHROOM => {
                     person.left_bathroom_at = msg.person_data.as_ref().unwrap().left_bathroom_at;
@@ -250,7 +322,7 @@ fn spawn_person_thread(
         };
     });
 
-    return (person_t, person.id, tx_person);
+    return (person_t, person_id, tx_person);
 }
 
 fn main() {
@@ -265,7 +337,7 @@ fn main() {
     let _router_t = thread::spawn(move || {
         log("Router spawned!".to_string());
 
-        let bathroom_interesting_events = vec![EV_NEW_PERSON];
+        let bathroom_interesting_events = vec![EV_NEW_PERSON, EV_PERSON_FINISHED_USING_BATHROOM];
 
         loop {
             match router.rx.try_recv() {
@@ -317,13 +389,13 @@ fn main() {
 
     let bathroom_t = thread::spawn(move || {
         log("Bathroom spawned!".to_string());
-        let mut b = new_bathroom(Gender::Male);
+        let mut bathroom = new_bathroom(Gender::Male);
         let (tx_bathroom, rx_bathroom): (Sender<Event>, Receiver<Event>) = mpsc::channel();
 
         bathroom_router
             .send(new_creation_event(
                 EV_NEW_BATHROOM.to_string(),
-                b.id,
+                bathroom.id,
                 None,
                 tx_bathroom.clone(),
                 None,
@@ -331,30 +403,62 @@ fn main() {
             .unwrap();
 
         loop {
+            match bathroom.allocate_cabin(bathroom.allowed_gender) {
+                Some(person) => {
+                    log(format!("Person {} entered the bathroom", person.id));
+                    let _ = bathroom_router
+                        .send(new_event(
+                            EV_PERSON_ENTERED_THE_BATHROOM.to_string(),
+                            bathroom.id,
+                            Some(person.id),
+                            Some(person),
+                        ))
+                        .unwrap();
+                }
+                None => (),
+            }
+
             match &rx_bathroom.try_recv() {
-                Ok(msg) => match msg.name.as_str() {
-                    EV_NEW_PERSON => {
-                        let person_data = msg.person_data.as_ref().unwrap().clone();
-                        b.enqueue(person_data.clone());
-                        log(format!(
-                            "Person {} joined the {:?} queue",
-                            person_data.id, person_data.gender
-                        ));
-                        let _ = bathroom_router.send(new_event(
-                            EV_PERSON_JOINED_THE_QUEUE.to_string(),
-                            b.id,
-                            Some(msg.producer_id),
-                            Some(msg.person_data.as_ref().unwrap().clone()),
-                        ));
+                Ok(msg) => {
+                    match msg.name.as_str() {
+                        EV_NEW_PERSON => {
+                            let person_data = msg.person_data.as_ref().unwrap().clone();
+                            bathroom.enqueue(person_data.clone());
+                            log(format!(
+                                "Person {} joined the {:?} queue",
+                                person_data.id, person_data.gender
+                            ));
+                            let _ = bathroom_router.send(new_event(
+                                EV_PERSON_JOINED_THE_QUEUE.to_string(),
+                                bathroom.id,
+                                Some(msg.producer_id),
+                                Some(msg.person_data.as_ref().unwrap().clone()),
+                            ));
+                        }
+                        EV_PERSON_FINISHED_USING_BATHROOM => {
+                            let person_data = msg.person_data.to_owned().unwrap();
+                            log(format!(
+                                "Person {} left the {:?} bathroom",
+                                person_data.id, person_data.gender
+                            ));
+                            bathroom.free_cabin(person_data.id);
+                            let _ = bathroom_router.send(new_event(
+                                EV_PERSON_LEFT_THE_BATHROOM.to_string(),
+                                bathroom.id,
+                                Some(msg.producer_id),
+                                Some(msg.person_data.as_ref().unwrap().clone()),
+                            ));
+                        }
+                        &_ => todo!(),
                     }
-                    &_ => todo!(),
-                },
+                    println!("[{}] {}", timestamp(), bathroom);
+                }
                 Err(_) => wait(RX_POLLING_WAIT),
             };
         }
     });
 
-    thread::sleep(Duration::new(1, 0));
+    // thread::sleep(Duration::new(1, 0));
 
     let mut rand = rand::thread_rng();
     loop {
