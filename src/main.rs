@@ -8,15 +8,20 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 use uuid::Uuid;
 
-const BATHROOM_SIZE: usize = 12;
-const MAX_USE_TIME_THRESHOLD: Duration = Duration::from_secs(5);
-const TIME_SCALE: f64 = 80.0;
+// Global constants
 const RX_POLLING_WAIT: Duration = Duration::from_micros(500);
-const PERSON_GENERATION_INTERVAL: Duration = Duration::from_secs(10);
 const ENABLE_LOGGING: bool = false;
+const TIME_SCALE: f64 = 80.0;
+
+// Person constants
+const PERSON_GENERATION_INTERVAL: Duration = Duration::from_secs(10);
 const MIN_PERSON_BATHROOM_SECONDS: u64 = 20;
 const MAX_PERSON_BATHROOM_SECONDS: u64 = MIN_PERSON_BATHROOM_SECONDS * 20;
 const PERSON_GENERATION_RATE: f64 = 0.3;
+
+// Bathroom constants
+const BATHROOM_SIZE: usize = 12;
+const MAX_USE_TIME_THRESHOLD: Duration = Duration::from_secs(MAX_PERSON_BATHROOM_SECONDS * 3);
 
 // Person events
 const EV_NEW_PERSON: &str = "new_person";
