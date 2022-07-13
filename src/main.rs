@@ -186,6 +186,7 @@ impl Bathroom {
                 .first_user_entered_at
                 .unwrap_or(Instant::now())
                 .elapsed()
+                .mul_f64(TIME_SCALE)
                 >= MAX_USE_TIME_THRESHOLD
         {
             return None;
