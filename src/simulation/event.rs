@@ -1,6 +1,6 @@
 use std::sync::mpsc::Sender;
 use uuid::Uuid;
-//
+
 // Person events
 pub const EV_NEW_PERSON: &str = "new_person";
 pub const EV_PERSON_JOINED_THE_QUEUE: &str = "person_joined_the_queue";
@@ -10,6 +10,16 @@ pub const EV_PERSON_LEFT_THE_BATHROOM: &str = "person_left_the_bathroom";
 // Bathroom events
 pub const EV_NEW_BATHROOM: &str = "new_bathroom";
 pub const EV_BATHROOM_SWITCHED_GENDERS: &str = "bathroom_switched_genders";
+
+pub const ALL_EVENTS: [&str; 7] = [
+    EV_NEW_BATHROOM,
+    EV_NEW_PERSON,
+    EV_PERSON_JOINED_THE_QUEUE,
+    EV_PERSON_ENTERED_THE_BATHROOM,
+    EV_PERSON_FINISHED_USING_BATHROOM,
+    EV_PERSON_LEFT_THE_BATHROOM,
+    EV_BATHROOM_SWITCHED_GENDERS,
+];
 
 #[derive(Clone, Debug)]
 pub struct Event {
