@@ -9,14 +9,16 @@ pub const EV_PERSON_FINISHED_USING_BATHROOM: &str = "person_finished_using_bathr
 pub const EV_PERSON_LEFT_THE_BATHROOM: &str = "person_left_the_bathroom";
 // Bathroom events
 pub const EV_NEW_BATHROOM: &str = "new_bathroom";
+pub const EV_BATHROOM_SWITCHED_GENDERS: &str = "bathroom_switched_genders";
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub struct Event {
     pub name: String,
     pub producer_id: Uuid,
     pub destination_id: Option<Uuid>,
     pub producer_sender: Option<Sender<Event>>,
-    pub person_data: Option<super::person::Person>,
+    pub person_snapshot: Option<super::person::Person>,
+    pub bathroom_snapshot: Option<super::bathroom::Bathroom>,
 }
 
 pub fn new_event(
@@ -24,13 +26,15 @@ pub fn new_event(
     producer_id: Uuid,
     destination_id: Option<Uuid>,
     person: Option<super::person::Person>,
+    bathroom: Option<super::bathroom::Bathroom>,
 ) -> Event {
     return Event {
         name,
         producer_id,
         destination_id,
         producer_sender: None,
-        person_data: person,
+        person_snapshot: person,
+        bathroom_snapshot: bathroom,
     };
 }
 
@@ -46,6 +50,7 @@ pub fn new_creation_event(
         producer_id,
         destination_id,
         producer_sender: Some(producer_sender),
-        person_data: person,
+        person_snapshot: person,
+        bathroom_snapshot: None,
     };
 }

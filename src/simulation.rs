@@ -1,5 +1,6 @@
 pub mod bathroom;
 pub mod event;
+pub mod metrics_collector;
 pub mod person;
 pub mod router;
 
@@ -9,6 +10,7 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use self::event::Event;
+use self::metrics_collector::MetricsCollector;
 use self::person::Gender;
 
 const ENABLE_LOGGING: bool = false;
@@ -63,11 +65,11 @@ pub fn spawn_person_thread(router_tx: Sender<Event>, gender: Gender) -> JoinHand
         match &rx_person.try_recv() {
             Ok(msg) => match msg.name.as_str() {
                 event::EV_PERSON_JOINED_THE_QUEUE => {
-                    person.joined_queue_at = msg.person_data.as_ref().unwrap().joined_queue_at
+                    person.joined_queue_at = msg.person_snapshot.as_ref().unwrap().joined_queue_at
                 }
                 event::EV_PERSON_ENTERED_THE_BATHROOM => {
                     person.entered_bathroom_at =
-                        msg.person_data.as_ref().unwrap().entered_bathroom_at;
+                        msg.person_snapshot.as_ref().unwrap().entered_bathroom_at;
                     wait(Duration::new(
                         rand.gen_range(MIN_PERSON_BATHROOM_SECONDS..MAX_PERSON_BATHROOM_SECONDS),
                         0,
@@ -78,11 +80,13 @@ pub fn spawn_person_thread(router_tx: Sender<Event>, gender: Gender) -> JoinHand
                             person.id,
                             None,
                             Some(person.clone()),
+                            None,
                         ))
                         .unwrap();
                 }
                 event::EV_PERSON_LEFT_THE_BATHROOM => {
-                    person.left_bathroom_at = msg.person_data.as_ref().unwrap().left_bathroom_at;
+                    person.left_bathroom_at =
+                        msg.person_snapshot.as_ref().unwrap().left_bathroom_at;
                     break;
                 }
                 &_ => todo!(),
@@ -110,7 +114,25 @@ pub fn spawn_bathroom_thread(router_tx: Sender<Event>) {
             ))
             .unwrap();
 
+        let mut previous_bathroom_allowed_gender = bathroom.allowed_gender;
+        let mut current_bathroom_allowed_gender = bathroom.allowed_gender;
+        let mut previous_bathroom_state = bathroom.clone();
+
         loop {
+            if previous_bathroom_allowed_gender != current_bathroom_allowed_gender {
+                println!("SWITCHED GENDERSSSS");
+                router_tx
+                    .send(event::new_event(
+                        event::EV_BATHROOM_SWITCHED_GENDERS.to_string(),
+                        bathroom.id,
+                        None,
+                        None,
+                        Some(previous_bathroom_state.clone()),
+                    ))
+                    .unwrap()
+            }
+            previous_bathroom_state = bathroom.clone();
+
             match bathroom.allocate_cabin(bathroom.allowed_gender) {
                 Some(person) => {
                     log(format!("Person {} entered the bathroom", person.id));
@@ -120,46 +142,51 @@ pub fn spawn_bathroom_thread(router_tx: Sender<Event>) {
                             bathroom.id,
                             Some(person.id),
                             Some(person),
+                            Some(bathroom.clone()),
                         ))
                         .unwrap();
                 }
                 None => (),
             }
 
+            previous_bathroom_allowed_gender = bathroom.allowed_gender;
             match &rx_bathroom.try_recv() {
                 Ok(msg) => match msg.name.as_str() {
                     event::EV_NEW_PERSON => {
-                        let person_data = msg.person_data.as_ref().unwrap().clone();
-                        bathroom.enqueue(person_data.clone());
+                        let person_snapshot = msg.person_snapshot.as_ref().unwrap().clone();
+                        bathroom.enqueue(person_snapshot.clone());
                         log(format!(
                             "Person {} joined the {} queue",
-                            person_data.id, person_data.gender
+                            person_snapshot.id, person_snapshot.gender
                         ));
                         let _ = router_tx.send(event::new_event(
                             event::EV_PERSON_JOINED_THE_QUEUE.to_string(),
                             bathroom.id,
                             Some(msg.producer_id),
-                            Some(msg.person_data.as_ref().unwrap().clone()),
+                            Some(msg.person_snapshot.as_ref().unwrap().clone()),
+                            Some(bathroom.clone()),
                         ));
                     }
                     event::EV_PERSON_FINISHED_USING_BATHROOM => {
-                        let person_data = msg.person_data.to_owned().unwrap();
+                        let person_snapshot = msg.person_snapshot.to_owned().unwrap();
                         log(format!(
                             "Person {} left the {} bathroom",
-                            person_data.id, person_data.gender
+                            person_snapshot.id, person_snapshot.gender
                         ));
-                        bathroom.free_cabin(person_data.id);
+                        bathroom.free_cabin(person_snapshot.id);
                         let _ = router_tx.send(event::new_event(
                             event::EV_PERSON_LEFT_THE_BATHROOM.to_string(),
                             bathroom.id,
                             Some(msg.producer_id),
-                            Some(msg.person_data.as_ref().unwrap().clone()),
+                            Some(msg.person_snapshot.as_ref().unwrap().clone()),
+                            Some(bathroom.clone()),
                         ));
                     }
                     &_ => todo!(),
                 },
                 Err(_) => wait(RX_POLLING_WAIT),
             };
+            current_bathroom_allowed_gender = bathroom.allowed_gender;
         }
     });
 }
@@ -183,10 +210,10 @@ pub fn spawn_router_thread(mut router: router::Router) -> JoinHandle<()> {
                                 msg.producer_id
                             ));
                             bathroom_interesting_events.iter().for_each(|event| {
-                                let _ = &router.listeners.insert(
-                                    event.to_string(),
-                                    vec![msg.producer_sender.as_ref().unwrap().clone()],
-                                );
+                                let listeners =
+                                    &mut router.listeners.get_mut(&event.to_string()).unwrap();
+                                let _ =
+                                    listeners.push(msg.producer_sender.as_ref().unwrap().clone());
                             })
                         }
                         event::EV_NEW_PERSON => {
@@ -208,9 +235,11 @@ pub fn spawn_router_thread(mut router: router::Router) -> JoinHandle<()> {
                     }
 
                     match router.listeners.get(&msg.name) {
-                        Some(interested_parties) => interested_parties
-                            .iter()
-                            .for_each(|tx| tx.send(msg.clone()).unwrap()),
+                        Some(interested_parties) => {
+                            interested_parties
+                                .iter()
+                                .for_each(|tx| tx.send(msg.clone()).unwrap());
+                        }
                         None => (),
                     }
                 }
@@ -218,6 +247,25 @@ pub fn spawn_router_thread(mut router: router::Router) -> JoinHandle<()> {
             };
         }
     })
+}
+
+pub fn spawn_metrics_collector_thread(
+    _router_tx: Sender<Event>,
+    metrics_collector_rx: Receiver<Event>,
+) {
+    let _metrics_collector = metrics_collector::new_metrics_collector();
+
+    thread::spawn(move || loop {
+        match &metrics_collector_rx.try_recv() {
+            Ok(msg) => match msg.name.as_str() {
+                event::EV_BATHROOM_SWITCHED_GENDERS => {
+                    println!("====> Bathroom {}", msg.bathroom_snapshot.as_ref().unwrap())
+                }
+                &_ => (),
+            },
+            Err(_) => wait(RX_POLLING_WAIT),
+        }
+    });
 }
 
 pub fn randomly_generate_person_threads(router_tx: Sender<Event>) {

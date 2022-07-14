@@ -2,7 +2,7 @@ use core::fmt;
 use std::time::Instant;
 use uuid::Uuid;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Bathroom {
     pub id: Uuid,
     pub cabins: [Option<super::person::Person>; super::BATHROOM_SIZE],
