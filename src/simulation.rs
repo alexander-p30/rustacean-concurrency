@@ -7,14 +7,13 @@ pub mod router;
 use rand::prelude::*;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread::{self, JoinHandle};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use self::event::Event;
-use self::metrics_collector::MetricsCollector;
 use self::person::Gender;
 
 const ENABLE_LOGGING: bool = false;
-pub const TIME_SCALE: f64 = 80.0;
+pub const TIME_SCALE: f64 = 500.0;
 pub const RX_POLLING_WAIT: Duration = Duration::from_micros(500);
 
 pub const MIN_PERSON_BATHROOM_SECONDS: u64 = 20;
@@ -120,7 +119,6 @@ pub fn spawn_bathroom_thread(router_tx: Sender<Event>) {
 
         loop {
             if previous_bathroom_allowed_gender != current_bathroom_allowed_gender {
-                println!("SWITCHED GENDERSSSS");
                 router_tx
                     .send(event::new_event(
                         event::EV_BATHROOM_SWITCHED_GENDERS.to_string(),
@@ -153,8 +151,9 @@ pub fn spawn_bathroom_thread(router_tx: Sender<Event>) {
             match &rx_bathroom.try_recv() {
                 Ok(msg) => match msg.name.as_str() {
                     event::EV_NEW_PERSON => {
-                        let person_snapshot = msg.person_snapshot.as_ref().unwrap().clone();
+                        let mut person_snapshot = msg.person_snapshot.as_ref().unwrap().clone();
                         bathroom.enqueue(person_snapshot.clone());
+                        person_snapshot.joined_queue_at = Some(Instant::now());
                         log(format!(
                             "Person {} joined the {} queue",
                             person_snapshot.id, person_snapshot.gender
@@ -163,22 +162,23 @@ pub fn spawn_bathroom_thread(router_tx: Sender<Event>) {
                             event::EV_PERSON_JOINED_THE_QUEUE.to_string(),
                             bathroom.id,
                             Some(msg.producer_id),
-                            Some(msg.person_snapshot.as_ref().unwrap().clone()),
+                            Some(person_snapshot),
                             Some(bathroom.clone()),
                         ));
                     }
                     event::EV_PERSON_FINISHED_USING_BATHROOM => {
-                        let person_snapshot = msg.person_snapshot.to_owned().unwrap();
+                        let mut person_snapshot = msg.person_snapshot.to_owned().unwrap();
                         log(format!(
                             "Person {} left the {} bathroom",
                             person_snapshot.id, person_snapshot.gender
                         ));
                         bathroom.free_cabin(person_snapshot.id);
+                        person_snapshot.left_bathroom_at = Some(Instant::now());
                         let _ = router_tx.send(event::new_event(
                             event::EV_PERSON_LEFT_THE_BATHROOM.to_string(),
                             bathroom.id,
                             Some(msg.producer_id),
-                            Some(msg.person_snapshot.as_ref().unwrap().clone()),
+                            Some(person_snapshot),
                             Some(bathroom.clone()),
                         ));
                     }
@@ -253,13 +253,59 @@ pub fn spawn_metrics_collector_thread(
     _router_tx: Sender<Event>,
     metrics_collector_rx: Receiver<Event>,
 ) {
-    let _metrics_collector = metrics_collector::new_metrics_collector();
+    let mut metrics_collector = metrics_collector::new_metrics_collector();
 
     thread::spawn(move || loop {
         match &metrics_collector_rx.try_recv() {
             Ok(msg) => match msg.name.as_str() {
                 event::EV_BATHROOM_SWITCHED_GENDERS => {
-                    println!("====> Bathroom {}", msg.bathroom_snapshot.as_ref().unwrap())
+                    let bathroom_snapshot = msg.bathroom_snapshot.as_ref().unwrap();
+                    let time_since_last_gender_change: u64;
+
+                    match bathroom_snapshot.first_user_entered_at {
+                        Some(instant) => {
+                            time_since_last_gender_change = instant.elapsed().as_secs()
+                        }
+                        None => continue,
+                    };
+
+                    metrics_collector.gender_switches += 1;
+                    match bathroom_snapshot.allowed_gender {
+                        Gender::Male => {
+                            metrics_collector
+                                .time_bathroom_was_male
+                                .add_measure(time_since_last_gender_change);
+                            metrics_collector.male_queue_size.add_measure(
+                                bathroom_snapshot.male_queue.len().try_into().unwrap(),
+                            );
+                        }
+                        Gender::Female => {
+                            metrics_collector
+                                .time_bathroom_was_female
+                                .add_measure(time_since_last_gender_change);
+                            metrics_collector.female_queue_size.add_measure(
+                                bathroom_snapshot.male_queue.len().try_into().unwrap(),
+                            );
+                        }
+                    }
+                }
+                event::EV_PERSON_LEFT_THE_BATHROOM => {
+                    let person_snapshot = msg.person_snapshot.as_ref().unwrap();
+                    let personal_total_time_spent = person_snapshot
+                        .left_bathroom_at
+                        .unwrap()
+                        .duration_since(person_snapshot.joined_queue_at.unwrap())
+                        .mul_f64(TIME_SCALE)
+                        .as_secs();
+
+                    match person_snapshot.gender {
+                        Gender::Male => metrics_collector
+                            .male_personal_total_time_spent
+                            .add_measure(personal_total_time_spent),
+                        Gender::Female => metrics_collector
+                            .male_personal_total_time_spent
+                            .add_measure(personal_total_time_spent),
+                    }
                 }
                 &_ => (),
             },
