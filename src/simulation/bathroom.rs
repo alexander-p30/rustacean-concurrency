@@ -76,11 +76,6 @@ impl Bathroom {
         }
 
         self.display();
-
-        if self.should_switch_genders() {
-            self.switch_genders();
-            self.display();
-        }
     }
 
     pub fn allocate_cabin(
@@ -154,11 +149,6 @@ impl Bathroom {
         self.cabins[cabin_idx] = None;
 
         self.display();
-
-        if self.should_switch_genders() {
-            self.switch_genders();
-            self.display();
-        }
     }
 
     pub fn should_switch_genders(&mut self) -> bool {
