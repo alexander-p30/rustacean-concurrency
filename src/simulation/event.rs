@@ -7,11 +7,16 @@ pub const EV_PERSON_JOINED_THE_QUEUE: &str = "person_joined_the_queue";
 pub const EV_PERSON_ENTERED_THE_BATHROOM: &str = "person_entered_the_bathroom";
 pub const EV_PERSON_FINISHED_USING_BATHROOM: &str = "person_finished_using_bathroom";
 pub const EV_PERSON_LEFT_THE_BATHROOM: &str = "person_left_the_bathroom";
+
 // Bathroom events
 pub const EV_NEW_BATHROOM: &str = "new_bathroom";
 pub const EV_BATHROOM_SWITCHED_GENDERS: &str = "bathroom_switched_genders";
 
-pub const ALL_EVENTS: [&str; 7] = [
+// Simulation events
+pub const EV_SIMULATION_STOPPED: &str = "simulation_stopped";
+pub const EV_SIMULATION_FINISHED: &str = "simulation_finished";
+
+pub const ALL_EVENTS: [&str; 8] = [
     EV_NEW_BATHROOM,
     EV_NEW_PERSON,
     EV_PERSON_JOINED_THE_QUEUE,
@@ -19,6 +24,7 @@ pub const ALL_EVENTS: [&str; 7] = [
     EV_PERSON_FINISHED_USING_BATHROOM,
     EV_PERSON_LEFT_THE_BATHROOM,
     EV_BATHROOM_SWITCHED_GENDERS,
+    EV_SIMULATION_STOPPED,
 ];
 
 #[derive(Clone, Debug)]
