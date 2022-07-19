@@ -57,7 +57,7 @@ pub fn spawn_person_thread(router_tx: Sender<Event>, gender: Gender) -> JoinHand
     ));
     router_tx
         .send(event::new_creation_event(
-            event::EV_NEW_PERSON.to_string(),
+            event::NEW_PERSON.to_string(),
             person.id,
             None,
             tx_person.clone(),
@@ -70,10 +70,10 @@ pub fn spawn_person_thread(router_tx: Sender<Event>, gender: Gender) -> JoinHand
 
         match &rx_person.try_recv() {
             Ok(msg) => match msg.name.as_str() {
-                event::EV_PERSON_JOINED_THE_QUEUE => {
+                event::PERSON_JOINED_THE_QUEUE => {
                     person.joined_queue_at = msg.person_snapshot.as_ref().unwrap().joined_queue_at
                 }
-                event::EV_PERSON_ENTERED_THE_BATHROOM => {
+                event::PERSON_ENTERED_THE_BATHROOM => {
                     person.entered_bathroom_at =
                         msg.person_snapshot.as_ref().unwrap().entered_bathroom_at;
                     wait(Duration::new(
@@ -82,7 +82,7 @@ pub fn spawn_person_thread(router_tx: Sender<Event>, gender: Gender) -> JoinHand
                     ));
                     let _ = router_tx
                         .send(event::new_event(
-                            event::EV_PERSON_FINISHED_USING_BATHROOM.to_string(),
+                            event::PERSON_FINISHED_USING_BATHROOM.to_string(),
                             person.id,
                             None,
                             Some(person.clone()),
@@ -90,7 +90,7 @@ pub fn spawn_person_thread(router_tx: Sender<Event>, gender: Gender) -> JoinHand
                         ))
                         .unwrap();
                 }
-                event::EV_PERSON_LEFT_THE_BATHROOM => {
+                event::PERSON_LEFT_THE_BATHROOM => {
                     person.left_bathroom_at =
                         msg.person_snapshot.as_ref().unwrap().left_bathroom_at;
                     break;
@@ -112,7 +112,7 @@ pub fn spawn_bathroom_thread(router_tx: Sender<Event>) {
 
         router_tx
             .send(event::new_creation_event(
-                event::EV_NEW_BATHROOM.to_string(),
+                event::NEW_BATHROOM.to_string(),
                 bathroom.id,
                 None,
                 tx_bathroom.clone(),
@@ -129,7 +129,7 @@ pub fn spawn_bathroom_thread(router_tx: Sender<Event>) {
                 bathroom.switch_genders();
                 router_tx
                     .send(event::new_event(
-                        event::EV_BATHROOM_SWITCHED_GENDERS.to_string(),
+                        event::BATHROOM_SWITCHED_GENDERS.to_string(),
                         bathroom.id,
                         None,
                         None,
@@ -144,7 +144,7 @@ pub fn spawn_bathroom_thread(router_tx: Sender<Event>) {
                     log(format!("Person {} entered the bathroom", person.id));
                     let _ = router_tx
                         .send(event::new_event(
-                            event::EV_PERSON_ENTERED_THE_BATHROOM.to_string(),
+                            event::PERSON_ENTERED_THE_BATHROOM.to_string(),
                             bathroom.id,
                             Some(person.id),
                             Some(person),
@@ -157,7 +157,7 @@ pub fn spawn_bathroom_thread(router_tx: Sender<Event>) {
 
             match &rx_bathroom.try_recv() {
                 Ok(msg) => match msg.name.as_str() {
-                    event::EV_NEW_PERSON => {
+                    event::NEW_PERSON => {
                         let mut person_snapshot = msg.person_snapshot.as_ref().unwrap().clone();
                         bathroom.enqueue(person_snapshot.clone());
                         person_snapshot.joined_queue_at = Some(Instant::now());
@@ -166,14 +166,14 @@ pub fn spawn_bathroom_thread(router_tx: Sender<Event>) {
                             person_snapshot.id, person_snapshot.gender
                         ));
                         let _ = router_tx.send(event::new_event(
-                            event::EV_PERSON_JOINED_THE_QUEUE.to_string(),
+                            event::PERSON_JOINED_THE_QUEUE.to_string(),
                             bathroom.id,
                             Some(msg.producer_id),
                             Some(person_snapshot),
                             Some(bathroom.clone()),
                         ));
                     }
-                    event::EV_PERSON_FINISHED_USING_BATHROOM => {
+                    event::PERSON_FINISHED_USING_BATHROOM => {
                         let mut person_snapshot = msg.person_snapshot.to_owned().unwrap();
                         log(format!(
                             "Person {} left the {} bathroom",
@@ -182,7 +182,7 @@ pub fn spawn_bathroom_thread(router_tx: Sender<Event>) {
                         bathroom.free_cabin(person_snapshot.id);
                         person_snapshot.left_bathroom_at = Some(Instant::now());
                         let _ = router_tx.send(event::new_event(
-                            event::EV_PERSON_LEFT_THE_BATHROOM.to_string(),
+                            event::PERSON_LEFT_THE_BATHROOM.to_string(),
                             bathroom.id,
                             Some(msg.producer_id),
                             Some(person_snapshot),
@@ -201,16 +201,14 @@ pub fn spawn_router_thread(mut router: router::Router) -> JoinHandle<()> {
     thread::spawn(move || {
         log("Router spawned!".to_string());
 
-        let bathroom_interesting_events = vec![
-            event::EV_NEW_PERSON,
-            event::EV_PERSON_FINISHED_USING_BATHROOM,
-        ];
+        let bathroom_interesting_events =
+            vec![event::NEW_PERSON, event::PERSON_FINISHED_USING_BATHROOM];
 
         loop {
             match router.rx.try_recv() {
                 Ok(ref msg) => {
                     match msg.name.as_str() {
-                        event::EV_NEW_BATHROOM => {
+                        event::NEW_BATHROOM => {
                             log(format!(
                                 "Registering bathroom {} in the router",
                                 msg.producer_id
@@ -222,7 +220,7 @@ pub fn spawn_router_thread(mut router: router::Router) -> JoinHandle<()> {
                                     listeners.push(msg.producer_sender.as_ref().unwrap().clone());
                             })
                         }
-                        event::EV_NEW_PERSON => {
+                        event::NEW_PERSON => {
                             log(format!(
                                 "Registering person {} in the router",
                                 msg.producer_id
@@ -264,7 +262,7 @@ pub fn spawn_metrics_collector_thread(
     thread::spawn(move || loop {
         match &metrics_collector_rx.try_recv() {
             Ok(msg) => match msg.name.as_str() {
-                event::EV_BATHROOM_SWITCHED_GENDERS => {
+                event::BATHROOM_SWITCHED_GENDERS => {
                     let bathroom_snapshot = msg.bathroom_snapshot.as_ref().unwrap();
                     let time_since_last_gender_change: u64;
 
@@ -296,7 +294,7 @@ pub fn spawn_metrics_collector_thread(
                         }
                     }
                 }
-                event::EV_PERSON_LEFT_THE_BATHROOM => {
+                event::PERSON_LEFT_THE_BATHROOM => {
                     let person_snapshot = msg.person_snapshot.as_ref().unwrap();
                     let personal_total_time_spent = person_snapshot
                         .left_bathroom_at
@@ -314,7 +312,7 @@ pub fn spawn_metrics_collector_thread(
                             .add_measure(personal_total_time_spent),
                     }
                 }
-                event::EV_SIMULATION_STOPPED => {
+                event::SIMULATION_STOPPED => {
                     metrics_collector.update_statistics();
                     let statistics_report = serde_json::to_string(&metrics_collector).unwrap();
                     let filename = format!(
@@ -331,7 +329,7 @@ pub fn spawn_metrics_collector_thread(
 
                     router_tx
                         .send(new_event(
-                            event::EV_SIMULATION_FINISHED.to_string(),
+                            event::SIMULATION_FINISHED.to_string(),
                             Uuid::new_v4(),
                             None,
                             None,
@@ -368,7 +366,7 @@ pub fn randomly_generate_person_threads(router_tx: Sender<Event>, main_rx: Recei
     println!("\n🛑 Stopping simulation...");
     router_tx
         .send(new_event(
-            event::EV_SIMULATION_STOPPED.to_string(),
+            event::SIMULATION_STOPPED.to_string(),
             Uuid::new_v4(),
             None,
             None,
@@ -378,7 +376,7 @@ pub fn randomly_generate_person_threads(router_tx: Sender<Event>, main_rx: Recei
 
     match main_rx.recv() {
         Ok(msg) => match msg.name.as_str() {
-            event::EV_SIMULATION_FINISHED => println!("🦀 Simulation finished gracefully..."),
+            event::SIMULATION_FINISHED => println!("🦀 Simulation finished gracefully..."),
             &_ => todo!(),
         },
         Err(_) => println!("Error on simulation shutdown!"),

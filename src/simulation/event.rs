@@ -2,29 +2,29 @@ use std::sync::mpsc::Sender;
 use uuid::Uuid;
 
 // Person events
-pub const EV_NEW_PERSON: &str = "new_person";
-pub const EV_PERSON_JOINED_THE_QUEUE: &str = "person_joined_the_queue";
-pub const EV_PERSON_ENTERED_THE_BATHROOM: &str = "person_entered_the_bathroom";
-pub const EV_PERSON_FINISHED_USING_BATHROOM: &str = "person_finished_using_bathroom";
-pub const EV_PERSON_LEFT_THE_BATHROOM: &str = "person_left_the_bathroom";
+pub const NEW_PERSON: &str = "new_person";
+pub const PERSON_JOINED_THE_QUEUE: &str = "person_joined_the_queue";
+pub const PERSON_ENTERED_THE_BATHROOM: &str = "person_entered_the_bathroom";
+pub const PERSON_FINISHED_USING_BATHROOM: &str = "person_finished_using_bathroom";
+pub const PERSON_LEFT_THE_BATHROOM: &str = "person_left_the_bathroom";
 
 // Bathroom events
-pub const EV_NEW_BATHROOM: &str = "new_bathroom";
-pub const EV_BATHROOM_SWITCHED_GENDERS: &str = "bathroom_switched_genders";
+pub const NEW_BATHROOM: &str = "new_bathroom";
+pub const BATHROOM_SWITCHED_GENDERS: &str = "bathroom_switched_genders";
 
 // Simulation events
-pub const EV_SIMULATION_STOPPED: &str = "simulation_stopped";
-pub const EV_SIMULATION_FINISHED: &str = "simulation_finished";
+pub const SIMULATION_STOPPED: &str = "simulation_stopped";
+pub const SIMULATION_FINISHED: &str = "simulation_finished";
 
 pub const ALL_EVENTS: [&str; 8] = [
-    EV_NEW_BATHROOM,
-    EV_NEW_PERSON,
-    EV_PERSON_JOINED_THE_QUEUE,
-    EV_PERSON_ENTERED_THE_BATHROOM,
-    EV_PERSON_FINISHED_USING_BATHROOM,
-    EV_PERSON_LEFT_THE_BATHROOM,
-    EV_BATHROOM_SWITCHED_GENDERS,
-    EV_SIMULATION_STOPPED,
+    NEW_BATHROOM,
+    NEW_PERSON,
+    PERSON_JOINED_THE_QUEUE,
+    PERSON_ENTERED_THE_BATHROOM,
+    PERSON_FINISHED_USING_BATHROOM,
+    PERSON_LEFT_THE_BATHROOM,
+    BATHROOM_SWITCHED_GENDERS,
+    SIMULATION_STOPPED,
 ];
 
 #[derive(Clone, Debug)]

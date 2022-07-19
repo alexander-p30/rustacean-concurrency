@@ -13,7 +13,7 @@ fn main() {
     let router_tx = router.tx.clone();
 
     router.listeners.insert(
-        simulation::event::EV_SIMULATION_FINISHED.to_string(),
+        simulation::event::SIMULATION_FINISHED.to_string(),
         vec![main_tx.clone()],
     );
 
