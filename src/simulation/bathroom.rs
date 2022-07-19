@@ -94,7 +94,7 @@ impl Bathroom {
         let mut person = first_in_queue.unwrap().to_owned();
 
         if person.gender != self.allowed_gender
-            || self.use_count == super::BATHROOM_SIZE.try_into().unwrap()
+            || self.use_count == super::BATHROOM_SIZE as u32
             || self
                 .first_user_entered_at
                 .unwrap_or(Instant::now())

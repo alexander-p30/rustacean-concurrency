@@ -1,9 +1,8 @@
+use serde::Serialize;
 use std::ops::Div;
-use uuid::Uuid;
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct MetricsCollector {
-    pub id: Uuid,
     pub male_queue_size: Statistic,
     pub female_queue_size: Statistic,
     pub gender_switches: u64,
@@ -15,7 +14,6 @@ pub struct MetricsCollector {
 
 pub fn new_metrics_collector() -> MetricsCollector {
     return MetricsCollector {
-        id: Uuid::new_v4(),
         male_queue_size: new_statistic(),
         female_queue_size: new_statistic(),
         gender_switches: 0,
@@ -37,7 +35,7 @@ impl MetricsCollector {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct Statistic {
     pub measures: Vec<u64>,
     pub avg: u64,

@@ -5,6 +5,8 @@ pub mod person;
 pub mod router;
 
 use rand::prelude::*;
+use std::fs::File;
+use std::io::Write;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Arc;
@@ -314,10 +316,23 @@ pub fn spawn_metrics_collector_thread(
                 }
                 event::EV_SIMULATION_STOPPED => {
                     metrics_collector.update_statistics();
+                    let statistics_report = serde_json::to_string(&metrics_collector).unwrap();
+                    let filename = format!(
+                        "./statistics_reports/{}.json",
+                        chrono::offset::Local::now().format("%Y-%m-%d_%H-%M-%S-%3f")
+                    );
+                    match File::create(&filename) {
+                        Ok(mut file) => {
+                            file.write(&statistics_report.as_bytes()).unwrap();
+                            println!("📄 Statistics report JSON file created successfully! File located at {}", filename);
+                        }
+                        Err(_) => println!("💩 Could not create statistics report file!"),
+                    };
+
                     router_tx
                         .send(new_event(
                             event::EV_SIMULATION_FINISHED.to_string(),
-                            metrics_collector.id,
+                            Uuid::new_v4(),
                             None,
                             None,
                             None,
@@ -350,7 +365,7 @@ pub fn randomly_generate_person_threads(router_tx: Sender<Event>, main_rx: Recei
         wait(PERSON_GENERATION_INTERVAL);
     }
 
-    println!("\nStopping simulation...");
+    println!("\n🛑 Stopping simulation...");
     router_tx
         .send(new_event(
             event::EV_SIMULATION_STOPPED.to_string(),
@@ -363,7 +378,7 @@ pub fn randomly_generate_person_threads(router_tx: Sender<Event>, main_rx: Recei
 
     match main_rx.recv() {
         Ok(msg) => match msg.name.as_str() {
-            event::EV_SIMULATION_FINISHED => println!("Simulation finished gracefully..."),
+            event::EV_SIMULATION_FINISHED => println!("🦀 Simulation finished gracefully..."),
             &_ => todo!(),
         },
         Err(_) => println!("Error on simulation shutdown!"),
