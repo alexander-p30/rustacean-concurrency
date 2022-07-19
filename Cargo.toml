@@ -16,3 +16,4 @@ features = [
 [dependencies]
 rand = "0.8.5"
 chrono = "0.4"
+ctrlc = "3.2.2"
