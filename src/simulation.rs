@@ -5,9 +5,14 @@ pub mod person;
 pub mod router;
 
 use rand::prelude::*;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
+use uuid::Uuid;
+
+use crate::simulation::event::new_event;
 
 use self::event::Event;
 use self::person::Gender;
@@ -113,12 +118,13 @@ pub fn spawn_bathroom_thread(router_tx: Sender<Event>) {
             ))
             .unwrap();
 
-        let mut previous_bathroom_allowed_gender = bathroom.allowed_gender;
-        let mut current_bathroom_allowed_gender = bathroom.allowed_gender;
-        let mut previous_bathroom_state = bathroom.clone();
+        let mut previous_bathroom_state: bathroom::Bathroom;
 
         loop {
-            if previous_bathroom_allowed_gender != current_bathroom_allowed_gender {
+            previous_bathroom_state = bathroom.clone();
+
+            if bathroom.should_switch_genders() {
+                bathroom.switch_genders();
                 router_tx
                     .send(event::new_event(
                         event::EV_BATHROOM_SWITCHED_GENDERS.to_string(),
@@ -127,9 +133,9 @@ pub fn spawn_bathroom_thread(router_tx: Sender<Event>) {
                         None,
                         Some(previous_bathroom_state.clone()),
                     ))
-                    .unwrap()
+                    .unwrap();
+                bathroom.display();
             }
-            previous_bathroom_state = bathroom.clone();
 
             match bathroom.allocate_cabin(bathroom.allowed_gender) {
                 Some(person) => {
@@ -147,7 +153,6 @@ pub fn spawn_bathroom_thread(router_tx: Sender<Event>) {
                 None => (),
             }
 
-            previous_bathroom_allowed_gender = bathroom.allowed_gender;
             match &rx_bathroom.try_recv() {
                 Ok(msg) => match msg.name.as_str() {
                     event::EV_NEW_PERSON => {
@@ -186,7 +191,6 @@ pub fn spawn_bathroom_thread(router_tx: Sender<Event>) {
                 },
                 Err(_) => wait(RX_POLLING_WAIT),
             };
-            current_bathroom_allowed_gender = bathroom.allowed_gender;
         }
     });
 }
@@ -250,7 +254,7 @@ pub fn spawn_router_thread(mut router: router::Router) -> JoinHandle<()> {
 }
 
 pub fn spawn_metrics_collector_thread(
-    _router_tx: Sender<Event>,
+    router_tx: Sender<Event>,
     metrics_collector_rx: Receiver<Event>,
 ) {
     let mut metrics_collector = metrics_collector::new_metrics_collector();
@@ -264,7 +268,8 @@ pub fn spawn_metrics_collector_thread(
 
                     match bathroom_snapshot.first_user_entered_at {
                         Some(instant) => {
-                            time_since_last_gender_change = instant.elapsed().as_secs()
+                            time_since_last_gender_change =
+                                instant.elapsed().mul_f64(TIME_SCALE).as_secs()
                         }
                         None => continue,
                     };
@@ -303,24 +308,64 @@ pub fn spawn_metrics_collector_thread(
                             .male_personal_total_time_spent
                             .add_measure(personal_total_time_spent),
                         Gender::Female => metrics_collector
-                            .male_personal_total_time_spent
+                            .female_personal_total_time_spent
                             .add_measure(personal_total_time_spent),
                     }
                 }
+                event::EV_SIMULATION_STOPPED => {
+                    metrics_collector.update_statistics();
+                    router_tx
+                        .send(new_event(
+                            event::EV_SIMULATION_FINISHED.to_string(),
+                            metrics_collector.id,
+                            None,
+                            None,
+                            None,
+                        ))
+                        .unwrap();
+                    break;
+                }
                 &_ => (),
             },
-            Err(_) => wait(RX_POLLING_WAIT),
+            Err(_) => wait(RX_POLLING_WAIT.div_f64(10.0)),
         }
     });
 }
 
-pub fn randomly_generate_person_threads(router_tx: Sender<Event>) {
+pub fn randomly_generate_person_threads(router_tx: Sender<Event>, main_rx: Receiver<Event>) {
     let mut rand = rand::thread_rng();
-    loop {
+    let running = Arc::new(AtomicBool::new(true));
+    let r = running.clone();
+
+    ctrlc::set_handler(move || {
+        r.store(false, Ordering::SeqCst);
+    })
+    .expect("Error setting Ctrl-C handler");
+
+    while running.load(Ordering::SeqCst) {
         if rand.gen_bool(PERSON_GENERATION_RATE) {
             let g = rand.gen::<Gender>();
             let _person_t = spawn_person_thread(router_tx.clone(), g);
         }
         wait(PERSON_GENERATION_INTERVAL);
+    }
+
+    println!("\nStopping simulation...");
+    router_tx
+        .send(new_event(
+            event::EV_SIMULATION_STOPPED.to_string(),
+            Uuid::new_v4(),
+            None,
+            None,
+            None,
+        ))
+        .unwrap();
+
+    match main_rx.recv() {
+        Ok(msg) => match msg.name.as_str() {
+            event::EV_SIMULATION_FINISHED => println!("Simulation finished gracefully..."),
+            &_ => todo!(),
+        },
+        Err(_) => println!("Error on simulation shutdown!"),
     }
 }

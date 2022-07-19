@@ -1,6 +1,9 @@
 use std::ops::Div;
+use uuid::Uuid;
 
+#[derive(Debug)]
 pub struct MetricsCollector {
+    pub id: Uuid,
     pub male_queue_size: Statistic,
     pub female_queue_size: Statistic,
     pub gender_switches: u64,
@@ -12,6 +15,7 @@ pub struct MetricsCollector {
 
 pub fn new_metrics_collector() -> MetricsCollector {
     return MetricsCollector {
+        id: Uuid::new_v4(),
         male_queue_size: new_statistic(),
         female_queue_size: new_statistic(),
         gender_switches: 0,
@@ -22,6 +26,18 @@ pub fn new_metrics_collector() -> MetricsCollector {
     };
 }
 
+impl MetricsCollector {
+    pub fn update_statistics(&mut self) {
+        self.male_queue_size.update_statistics();
+        self.female_queue_size.update_statistics();
+        self.time_bathroom_was_male.update_statistics();
+        self.time_bathroom_was_female.update_statistics();
+        self.male_personal_total_time_spent.update_statistics();
+        self.female_personal_total_time_spent.update_statistics();
+    }
+}
+
+#[derive(Debug)]
 pub struct Statistic {
     pub measures: Vec<u64>,
     pub avg: u64,
@@ -55,11 +71,13 @@ impl Statistic {
     }
 
     pub fn update_avg(&mut self) -> u64 {
-        self.avg = self
-            .measures
-            .iter()
-            .sum::<u64>()
-            .div(self.measures.len() as u64);
+        let measures_len = self.measures.len() as u64;
+
+        if measures_len == 0 {
+            self.avg = 0;
+        } else {
+            self.avg = self.measures.iter().sum::<u64>().div(measures_len as u64);
+        }
 
         return self.avg;
     }
