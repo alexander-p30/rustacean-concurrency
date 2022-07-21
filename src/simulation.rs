@@ -340,7 +340,7 @@ pub fn spawn_metrics_collector_thread(
                 }
                 &_ => (),
             },
-            Err(_) => wait(RX_POLLING_WAIT.div_f64(10.0)),
+            Err(_) => wait(RX_POLLING_WAIT),
         }
     });
 }
