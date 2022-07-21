@@ -294,6 +294,24 @@ pub fn spawn_metrics_collector_thread(
                         }
                     }
                 }
+                event::PERSON_ENTERED_THE_BATHROOM => {
+                    let person_snapshot = msg.person_snapshot.as_ref().unwrap();
+                    let personal_total_wait_time = person_snapshot
+                        .entered_bathroom_at
+                        .unwrap()
+                        .duration_since(person_snapshot.joined_queue_at.unwrap())
+                        .mul_f64(TIME_SCALE)
+                        .as_secs();
+
+                    match person_snapshot.gender {
+                        Gender::Male => metrics_collector
+                            .male_personal_total_wait_time
+                            .add_measure(personal_total_wait_time),
+                        Gender::Female => metrics_collector
+                            .female_personal_total_wait_time
+                            .add_measure(personal_total_wait_time),
+                    }
+                }
                 event::PERSON_LEFT_THE_BATHROOM => {
                     let person_snapshot = msg.person_snapshot.as_ref().unwrap();
                     let personal_total_time_spent = person_snapshot

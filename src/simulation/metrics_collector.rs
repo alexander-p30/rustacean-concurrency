@@ -10,6 +10,8 @@ pub struct MetricsCollector {
     pub time_bathroom_was_female: Statistic,
     pub male_personal_total_time_spent: Statistic,
     pub female_personal_total_time_spent: Statistic,
+    pub male_personal_total_wait_time: Statistic,
+    pub female_personal_total_wait_time: Statistic,
 }
 
 pub fn new_metrics_collector() -> MetricsCollector {
@@ -21,6 +23,8 @@ pub fn new_metrics_collector() -> MetricsCollector {
         time_bathroom_was_female: new_statistic(),
         male_personal_total_time_spent: new_statistic(),
         female_personal_total_time_spent: new_statistic(),
+        male_personal_total_wait_time: new_statistic(),
+        female_personal_total_wait_time: new_statistic(),
     };
 }
 
@@ -32,6 +36,8 @@ impl MetricsCollector {
         self.time_bathroom_was_female.update_statistics();
         self.male_personal_total_time_spent.update_statistics();
         self.female_personal_total_time_spent.update_statistics();
+        self.male_personal_total_wait_time.update_statistics();
+        self.female_personal_total_wait_time.update_statistics();
     }
 }
 
