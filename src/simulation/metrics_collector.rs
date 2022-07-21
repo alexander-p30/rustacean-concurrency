@@ -42,6 +42,10 @@ pub struct Statistic {
     pub min: u64,
     pub max: u64,
     pub median: u64,
+    pub percentile_10: u64,
+    pub percentile_25: u64,
+    pub percentile_75: u64,
+    pub percentile_90: u64,
     pub ordered_measures: Vec<u64>,
 }
 
@@ -52,6 +56,10 @@ fn new_statistic() -> Statistic {
         min: 0,
         max: 0,
         median: 0,
+        percentile_10: 0,
+        percentile_25: 0,
+        percentile_75: 0,
+        percentile_90: 0,
         ordered_measures: vec![],
     };
 }
@@ -110,10 +118,62 @@ impl Statistic {
         return self.median;
     }
 
+    pub fn update_percentile_10(&mut self) -> u64 {
+        self.percentile_10 = match self
+            .ordered_measures
+            .get(self.ordered_measures.len() / 10 as usize)
+        {
+            Some(i) => *i,
+            None => 0,
+        };
+
+        return self.percentile_10;
+    }
+
+    pub fn update_percentile_25(&mut self) -> u64 {
+        self.percentile_25 = match self
+            .ordered_measures
+            .get(self.ordered_measures.len() / 4 as usize)
+        {
+            Some(i) => *i,
+            None => 0,
+        };
+
+        return self.percentile_25;
+    }
+
+    pub fn update_percentile_75(&mut self) -> u64 {
+        self.percentile_75 = match self
+            .ordered_measures
+            .get((self.ordered_measures.len() / 4 as usize) * 3 as usize)
+        {
+            Some(i) => *i,
+            None => 0,
+        };
+
+        return self.percentile_75;
+    }
+
+    pub fn update_percentile_90(&mut self) -> u64 {
+        self.percentile_90 = match self
+            .ordered_measures
+            .get((self.ordered_measures.len() / 10 as usize) * 9 as usize)
+        {
+            Some(i) => *i,
+            None => 0,
+        };
+
+        return self.percentile_90;
+    }
+
     pub fn update_statistics(&mut self) {
         self.update_avg();
         self.update_min();
         self.update_max();
         self.update_median();
+        self.update_percentile_10();
+        self.update_percentile_25();
+        self.update_percentile_75();
+        self.update_percentile_90();
     }
 }
