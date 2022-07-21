@@ -23,8 +23,8 @@ const ENABLE_LOGGING: bool = false;
 pub const TIME_SCALE: f64 = 500.0;
 pub const RX_POLLING_WAIT: Duration = Duration::from_micros(500);
 
-pub const MIN_PERSON_BATHROOM_SECONDS: u64 = 20;
-pub const MAX_PERSON_BATHROOM_SECONDS: u64 = MIN_PERSON_BATHROOM_SECONDS * 20;
+pub const MIN_PERSON_BATHROOM_SECONDS: u64 = 60;
+pub const MAX_PERSON_BATHROOM_SECONDS: u64 = MIN_PERSON_BATHROOM_SECONDS * 5;
 //
 // Person constants
 pub const PERSON_GENERATION_INTERVAL: Duration = Duration::from_secs(10);
@@ -32,7 +32,7 @@ pub const PERSON_GENERATION_RATE: f64 = 0.3;
 
 // Bathroom constants
 pub const BATHROOM_SIZE: usize = 12;
-pub const MAX_USE_TIME_THRESHOLD: Duration = Duration::from_secs(MAX_PERSON_BATHROOM_SECONDS * 3);
+pub const MAX_USE_TIME_THRESHOLD: Duration = Duration::from_secs(MAX_PERSON_BATHROOM_SECONDS * 1);
 
 pub fn timestamp() -> chrono::format::DelayedFormat<chrono::format::StrftimeItems<'static>> {
     return chrono::offset::Local::now().format("%Y-%m-%d %H:%M:%S.%3f");
